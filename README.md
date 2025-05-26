@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that provides Nushell script execution cap
 
 ## Features
 
-- Execute Nushell scripts remotely via MCP
+- Execute Nushell scripts via MCP
 - Returns stdout, stderr, and exit codes
 - Supports full Nushell syntax and commands
 
