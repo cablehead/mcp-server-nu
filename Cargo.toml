@@ -2,17 +2,16 @@
 name = "mcp-server-nu"
 version = "0.1.0"
 edition = "2021"
-publish = false
 license = "MIT"
 
 [dependencies]
-rust-mcp-sdk = { path = "../crates/rust-mcp-sdk", default-features = false, features = [
+rust-mcp-sdk = { version = "0.3.3", default-features = false, features = [
     "server",
     "macros",
     "hyper-server",
     "ssl",
 ] }
-rust-mcp-schema = { path = "../crates/rust-mcp-transport", default-features = false, features = ["schema"] }
+rust-mcp-schema = { version = "0.5.1" }
 
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -21,6 +20,3 @@ async-trait = "0.1"
 futures = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-[lints]
-workspace = true

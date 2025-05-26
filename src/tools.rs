@@ -27,7 +27,7 @@ impl ExecTool {
             .arg(&self.script)
             .output()
             .await
-            .map_err(|e| CallToolError::new(format!("Failed to execute nushell: {}", e)))?;
+            .map_err(|e| CallToolError::new(e))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
