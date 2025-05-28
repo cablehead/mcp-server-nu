@@ -29,8 +29,7 @@ impl ServerHandler for NuServerHandler {
         request: CallToolRequest,
         runtime: &dyn McpServer,
     ) -> std::result::Result<CallToolResult, CallToolError> {
-        let tool_params: NuTools =
-            NuTools::try_from(request.params).map_err(CallToolError::new)?;
+        let tool_params: NuTools = NuTools::try_from(request.params).map_err(CallToolError::new)?;
 
         match tool_params {
             NuTools::ExecTool(exec_tool) => exec_tool.call_tool().await,

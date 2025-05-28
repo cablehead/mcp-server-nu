@@ -8,7 +8,31 @@ use tokio::process::Command;
 
 #[mcp_tool(
     name = "exec",
-    description = "Executes a nushell script and returns stdout, stderr, and exit code. Note: Nushell does not support trailing slashes for line continuation. Use round braces () to write multi-line pipelines.",
+    description = r"Executes a nushell script and returns stdout, stderr, and exit code.
+
+IMPORTANT NUSHELL SYNTAX DIFFERENCES FROM POSIX:
+
+Line Continuation:
+- NO trailing backslashes (\). Use parentheses () for multi-line pipelines
+- Example: (ls | where size > 1MB | get name)
+
+Output/Printing:
+- DON'T use 'echo' - it doesn't work like POSIX echo
+- Use 'print' for side-effect output: print 'hello world'
+- Use string literals for return values: 'return value'
+- Use pipelines for processing: 'data' | filter | transform
+
+Common Patterns:
+- Filter: ls | where size > 1MB
+- Transform: ls | get name
+- Variables: let var = 'value'
+- Return from pipeline: 'result' (not echo 'result')
+
+Data Types:
+- Nushell is structured data focused
+- Commands return tables/records, not just text
+- Use 'to csv' to convert structured data for LLM consumption
+- Use 'to text' for plain text output",
     idempotent_hint = false,
     destructive_hint = true,
     open_world_hint = true,
@@ -16,7 +40,7 @@ use tokio::process::Command;
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema)]
 pub struct ExecTool {
-    /// The nushell script to execute. For multi-line pipelines, use round braces: (command | filter | command). Trailing slashes are not valid in Nushell.
+    /// The nushell script to execute.
     script: String,
 }
 
