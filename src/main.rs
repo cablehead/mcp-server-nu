@@ -28,7 +28,7 @@ async fn main() -> SdkResult<()> {
             ..Default::default() // Using default values for other fields
         },
         meta: None,
-        instructions: Some("A MCP server that executes nushell scripts and returns stdout, stderr, and exit code.".to_string()),
+        instructions: Some("A MCP server that executes nushell scripts and returns stdout, stderr, and exit code. Important: Nushell does not support trailing slashes for line continuation. Use round braces () to write multi-line pipelines, e.g., (ls | where size > 1MB | get name).".to_string()),
         protocol_version: LATEST_PROTOCOL_VERSION.to_string(),
     };
 

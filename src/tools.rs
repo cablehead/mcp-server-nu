@@ -8,7 +8,7 @@ use tokio::process::Command;
 
 #[mcp_tool(
     name = "exec",
-    description = "Executes a nushell script and returns stdout, stderr, and exit code",
+    description = "Executes a nushell script and returns stdout, stderr, and exit code. Note: Nushell does not support trailing slashes for line continuation. Use round braces () to write multi-line pipelines.",
     idempotent_hint = false,
     destructive_hint = true,
     open_world_hint = true,
@@ -16,7 +16,7 @@ use tokio::process::Command;
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema)]
 pub struct ExecTool {
-    /// The nushell script to execute
+    /// The nushell script to execute. For multi-line pipelines, use round braces: (command | filter | command). Trailing slashes are not valid in Nushell.
     script: String,
 }
 
