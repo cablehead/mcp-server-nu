@@ -10,6 +10,15 @@ use tokio::process::Command;
     name = "exec",
     description = r"Executes a nushell script and returns stdout, stderr, and exit code.
 
+EXECUTION PATTERN - CRITICAL:
+Execute ONE command at a time that produces meaningful output. For complex tasks, break into sequential single commands like a human operator would. This allows:
+- Seeing intermediate results before proceeding
+- Easier error diagnosis and recovery
+- Step-by-step validation of progress
+
+AVOID: Long multi-step scripts that could fail midway
+PREFER: Single commands with clear output, then assess and continue
+
 IMPORTANT NUSHELL SYNTAX DIFFERENCES FROM POSIX:
 
 Line Continuation:
