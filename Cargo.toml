@@ -3,6 +3,11 @@ name = "mcp-server-nu"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+description = "A Model Context Protocol (MCP) server for executing Nushell scripts"
+homepage = "https://github.com/cablehead/mcp-server-nu"
+repository = "https://github.com/cablehead/mcp-server-nu"
+categories = ["command-line-utilities", "development-tools"]
+keywords = ["mcp", "nushell", "server", "shell", "scripting"]
 
 [dependencies]
 rust-mcp-sdk = { version = "0.3.3", default-features = false, features = [
