@@ -2,6 +2,8 @@
 
 A Model Context Protocol (MCP) server that provides Nushell script execution capabilities.
 
+<img width="745" height="687" alt="image" src="https://github.com/user-attachments/assets/7df465b7-cbaf-47a2-9fa1-a2ab9c1f0fb3" />
+
 ⚠️ **This is an early sketch with no safety mechanisms. Do not use in production.**
 
 ## Features
