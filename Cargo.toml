@@ -10,15 +10,16 @@ categories = ["command-line-utilities", "development-tools"]
 keywords = ["mcp", "nushell", "server", "shell", "scripting"]
 
 [dependencies]
-rust-mcp-sdk = { version = "0.3.3", default-features = false, features = [
+rust-mcp-sdk = { version = "0.5.0", default-features = false, features = [
     "server",
     "macros",
     "hyper-server",
     "ssl",
+    "2025_06_18",
 ] }
-rust-mcp-schema = { version = "0.5.1" }
+rust-mcp-schema = { version = "0.7.1" }
 
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1.46", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 async-trait = "0.1"

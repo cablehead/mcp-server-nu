@@ -1,4 +1,4 @@
-use rust_mcp_schema::{schema_utils::CallToolError, CallToolResult};
+use rust_mcp_schema::{schema_utils::CallToolError, CallToolResult, TextContent};
 use rust_mcp_sdk::{
     macros::{mcp_tool, JsonSchema},
     tool_box,
@@ -72,10 +72,9 @@ impl ExecTool {
             "exit_code": exit_code
         });
 
-        Ok(CallToolResult::text_content(
-            serde_json::to_string_pretty(&result).unwrap(),
-            None,
-        ))
+        let text_content =
+            TextContent::new(serde_json::to_string_pretty(&result).unwrap(), None, None);
+        Ok(CallToolResult::text_content(vec![text_content]))
     }
 }
 

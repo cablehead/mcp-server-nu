@@ -21,6 +21,7 @@ async fn main() -> SdkResult<()> {
         server_info: Implementation {
             name: "Nushell MCP Server".to_string(),
             version: "0.1.0".to_string(),
+            title: Some("Nushell MCP Server".to_string()),
         },
         capabilities: ServerCapabilities {
             // indicates that server support mcp tools
