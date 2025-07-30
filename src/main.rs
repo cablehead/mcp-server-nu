@@ -15,6 +15,10 @@ use rust_mcp_sdk::{
 
 #[tokio::main]
 async fn main() -> SdkResult<()> {
+    // Initialize tracing
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
     // STEP 1: Define server details and capabilities
     let server_details = InitializeResult {
         // server name and version

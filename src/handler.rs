@@ -4,6 +4,7 @@ use rust_mcp_schema::{
     ListToolsResult, RpcError,
 };
 use rust_mcp_sdk::{mcp_server::ServerHandler, McpServer};
+use tracing::{error, info};
 
 use crate::tools::NuTools;
 
@@ -29,10 +30,32 @@ impl ServerHandler for NuServerHandler {
         request: CallToolRequest,
         runtime: &dyn McpServer,
     ) -> std::result::Result<CallToolResult, CallToolError> {
-        let tool_params: NuTools = NuTools::try_from(request.params).map_err(CallToolError::new)?;
+        info!(
+            "Received tool call request for tool: {}",
+            request.params.name
+        );
 
-        match tool_params {
-            NuTools::ExecTool(exec_tool) => exec_tool.call_tool().await,
-        }
+        let tool_params: NuTools = NuTools::try_from(request.params).map_err(|e| {
+            error!("Failed to parse tool parameters: {}", e);
+            CallToolError::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Invalid tool parameters: {e}"),
+            ))
+        })?;
+
+        let result = match tool_params {
+            NuTools::ExecTool(exec_tool) => match exec_tool.call_tool().await {
+                Ok(result) => {
+                    info!("Tool execution completed successfully");
+                    Ok(result)
+                }
+                Err(e) => {
+                    error!("Tool execution failed: {}", e);
+                    Err(e)
+                }
+            },
+        };
+
+        result
     }
 }

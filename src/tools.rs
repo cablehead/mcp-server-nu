@@ -4,7 +4,9 @@ use rust_mcp_sdk::{
     tool_box,
 };
 use serde_json::json;
+use std::time::Duration;
 use tokio::process::Command;
+use tracing::{error, info, warn};
 
 #[mcp_tool(
     name = "exec",
@@ -55,16 +57,46 @@ pub struct ExecTool {
 
 impl ExecTool {
     pub async fn call_tool(&self) -> Result<CallToolResult, CallToolError> {
-        let output = Command::new("nu")
-            .arg("-c")
-            .arg(&self.script)
-            .output()
-            .await
-            .map_err(|e| CallToolError::new(e))?;
+        info!(
+            "Executing nushell script: {}",
+            self.script.chars().take(100).collect::<String>()
+        );
+
+        let timeout_duration = Duration::from_secs(30);
+        let command_future = Command::new("nu").arg("-c").arg(&self.script).output();
+
+        let output = match tokio::time::timeout(timeout_duration, command_future).await {
+            Ok(result) => result.map_err(|e| {
+                error!("Command execution failed: {}", e);
+                CallToolError::new(e)
+            })?,
+            Err(_) => {
+                warn!(
+                    "Command timed out after {} seconds",
+                    timeout_duration.as_secs()
+                );
+                return Err(CallToolError::new(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!(
+                        "Command timed out after {} seconds. Consider breaking down complex scripts into smaller steps.",
+                        timeout_duration.as_secs()
+                    )
+                )));
+            }
+        };
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         let exit_code = output.status.code().unwrap_or(-1);
+
+        if exit_code != 0 {
+            warn!(
+                "Command exited with non-zero code: {}, stderr: {}",
+                exit_code, stderr
+            );
+        } else {
+            info!("Command completed successfully");
+        }
 
         let result = json!({
             "stdout": stdout,
