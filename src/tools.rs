@@ -1,16 +1,36 @@
-use rust_mcp_schema::{schema_utils::CallToolError, CallToolResult};
-use rust_mcp_sdk::{
-    macros::{mcp_tool, JsonSchema},
-    tool_box,
+use rmcp::{
+    handler::server::{router::tool::ToolRouter, tool::Parameters},
+    model::*,
+    schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::future::Future;
 use std::time::Duration;
 use tokio::process::Command;
 use tracing::{error, info, warn};
 
-#[mcp_tool(
-    name = "exec",
-    description = r"Executes a nushell script and returns stdout, stderr, and exit code.
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+pub struct ExecRequest {
+    /// The nushell script to execute.
+    script: String,
+}
+
+#[derive(Clone)]
+pub struct NuServer {
+    tool_router: ToolRouter<Self>,
+}
+
+#[tool_router]
+impl NuServer {
+    pub fn new() -> Self {
+        Self {
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    #[tool(
+        description = r"Executes a nushell script and returns stdout, stderr, and exit code.
 
 EXECUTION PATTERN - CRITICAL:
 Execute ONE command at a time that produces meaningful output. For complex tasks, break into sequential single commands like a human operator would. This allows:
@@ -43,45 +63,35 @@ Data Types:
 - Nushell is structured data focused
 - Commands return tables/records, not just text
 - Use 'to csv' to convert structured data for LLM consumption
-- Use 'to text' for plain text output",
-    idempotent_hint = false,
-    destructive_hint = true,
-    open_world_hint = true,
-    read_only_hint = false
-)]
-#[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema)]
-pub struct ExecTool {
-    /// The nushell script to execute.
-    script: String,
-}
-
-impl ExecTool {
-    pub async fn call_tool(&self) -> Result<CallToolResult, CallToolError> {
+- Use 'to text' for plain text output"
+    )]
+    async fn exec(
+        &self,
+        Parameters(req): Parameters<ExecRequest>,
+    ) -> Result<CallToolResult, McpError> {
         info!(
             "Executing nushell script: {}",
-            self.script.chars().take(100).collect::<String>()
+            req.script.chars().take(100).collect::<String>()
         );
 
         let timeout_duration = Duration::from_secs(30);
-        let command_future = Command::new("nu").arg("-c").arg(&self.script).output();
+        let command_future = Command::new("nu").arg("-c").arg(&req.script).output();
 
         let output = match tokio::time::timeout(timeout_duration, command_future).await {
             Ok(result) => result.map_err(|e| {
                 error!("Command execution failed: {}", e);
-                CallToolError::new(e)
+                McpError::internal_error(format!("Command execution failed: {e}"), None)
             })?,
             Err(_) => {
                 warn!(
                     "Command timed out after {} seconds",
                     timeout_duration.as_secs()
                 );
-                return Err(CallToolError::new(std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    format!(
-                        "Command timed out after {} seconds. Consider breaking down complex scripts into smaller steps.",
-                        timeout_duration.as_secs()
-                    )
-                )));
+                return Err(McpError::internal_error(
+                    format!("Command timed out after {} seconds. Consider breaking down complex scripts into smaller steps.",
+                    timeout_duration.as_secs()),
+                    None
+                ));
             }
         };
 
@@ -104,11 +114,22 @@ impl ExecTool {
             "exit_code": exit_code
         });
 
-        Ok(CallToolResult::text_content(
+        Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap(),
-            None,
-        ))
+        )]))
     }
 }
 
-tool_box!(NuTools, [ExecTool]);
+#[tool_handler]
+impl ServerHandler for NuServer {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            protocol_version: ProtocolVersion::V_2024_11_05,
+            capabilities: ServerCapabilities::builder()
+                .enable_tools()
+                .build(),
+            server_info: Implementation::from_build_env(),
+            instructions: Some("This server executes Nushell scripts and returns their output. It provides structured data processing capabilities with proper error handling and timeouts.".to_string()),
+        }
+    }
+}

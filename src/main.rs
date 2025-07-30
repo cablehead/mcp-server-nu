@@ -1,52 +1,57 @@
-mod handler;
 mod tools;
 
-use handler::NuServerHandler;
-use rust_mcp_schema::{
-    Implementation, InitializeResult, ServerCapabilities, ServerCapabilitiesTools,
-    LATEST_PROTOCOL_VERSION,
+use anyhow::Result;
+use rmcp::{
+    model::*, service::ServerInitializeError, transport::stdio, ErrorData as McpError, ServiceExt,
 };
-
-use rust_mcp_sdk::{
-    error::SdkResult,
-    mcp_server::{server_runtime, ServerRuntime},
-    McpServer, StdioTransport, TransportOptions,
-};
+use tokio::io::AsyncWriteExt;
+use tools::NuServer;
 
 #[tokio::main]
-async fn main() -> SdkResult<()> {
+async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
-    // STEP 1: Define server details and capabilities
-    let server_details = InitializeResult {
-        // server name and version
-        server_info: Implementation {
-            name: "Nushell MCP Server".to_string(),
-            version: "0.1.0".to_string(),
-        },
-        capabilities: ServerCapabilities {
-            // indicates that server support mcp tools
-            tools: Some(ServerCapabilitiesTools { list_changed: None }),
-            ..Default::default() // Using default values for other fields
-        },
-        meta: None,
-        instructions: Some(
-            "Executes nushell scripts with structured data processing capabilities.".to_string(),
-        ),
-        protocol_version: LATEST_PROTOCOL_VERSION.to_string(),
-    };
 
-    // STEP 2: create a std transport with default options
-    let transport = StdioTransport::new(TransportOptions::default())?;
+    // Create and start the Nushell MCP server
+    match NuServer::new().serve(stdio()).await {
+        Ok(service) => {
+            service.waiting().await?;
+            Ok(())
+        }
+        Err(ServerInitializeError::ExpectedInitializeRequest(Some(message))) => {
+            // Extract request ID if possible and send proper error response
+            if let Some((_, id)) = message.into_request() {
+                let error_response = ServerJsonRpcMessage::error(
+                    McpError::invalid_request(
+                        "Server not initialized. Please send initialize request first.",
+                        Some(serde_json::json!({
+                            "error": "Pre-initialization request received",
+                            "required_flow": [
+                                "1. Send initialize request",
+                                "2. Wait for initialize response",
+                                "3. Send initialized notification",
+                                "4. Then other requests are allowed"
+                            ]
+                        })),
+                    ),
+                    id,
+                );
 
-    // STEP 3: instantiate our custom handler for handling MCP messages
-    let handler = NuServerHandler {};
+                let error_json = serde_json::to_string(&error_response)?;
+                let mut stdout = tokio::io::stdout();
+                stdout
+                    .write_all(format!("{error_json}\n").as_bytes())
+                    .await?;
+                stdout.flush().await?;
+            }
 
-    // STEP 4: create a MCP server
-    let server: ServerRuntime = server_runtime::create_server(server_details, transport, handler);
-
-    // STEP 5: Start the server
-    server.start().await
+            Ok(())
+        }
+        Err(e) => {
+            // Let other initialization errors propagate normally
+            Err(anyhow::anyhow!("Server initialization failed: {}", e))
+        }
+    }
 }
