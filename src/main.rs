@@ -15,43 +15,48 @@ async fn main() -> Result<()> {
         .init();
 
     // Create and start the Nushell MCP server
-    match NuServer::new().serve(stdio()).await {
-        Ok(service) => {
-            service.waiting().await?;
-            Ok(())
-        }
-        Err(ServerInitializeError::ExpectedInitializeRequest(Some(message))) => {
-            // Extract request ID if possible and send proper error response
-            if let Some((_, id)) = message.into_request() {
-                let error_response = ServerJsonRpcMessage::error(
-                    McpError::invalid_request(
-                        "Server not initialized. Please send initialize request first.",
-                        Some(serde_json::json!({
-                            "error": "Pre-initialization request received",
-                            "required_flow": [
-                                "1. Send initialize request",
-                                "2. Wait for initialize response",
-                                "3. Send initialized notification",
-                                "4. Then other requests are allowed"
-                            ]
-                        })),
-                    ),
-                    id,
-                );
-
-                let error_json = serde_json::to_string(&error_response)?;
-                let mut stdout = tokio::io::stdout();
-                stdout
-                    .write_all(format!("{error_json}\n").as_bytes())
-                    .await?;
-                stdout.flush().await?;
+    loop {
+        match NuServer::new().serve(stdio()).await {
+            Ok(service) => {
+                service.waiting().await?;
+                break;
             }
+            Err(ServerInitializeError::ExpectedInitializeRequest(Some(message))) => {
+                // Extract request ID if possible and send proper error response
+                if let Some((_, id)) = message.into_request() {
+                    let error_response = ServerJsonRpcMessage::error(
+                        McpError::invalid_request(
+                            "Server not initialized. Please send initialize request first.",
+                            Some(serde_json::json!({
+                                "error": "Pre-initialization request received",
+                                "required_flow": [
+                                    "1. Send initialize request",
+                                    "2. Wait for initialize response",
+                                    "3. Send initialized notification",
+                                    "4. Then other requests are allowed"
+                                ]
+                            })),
+                        ),
+                        id,
+                    );
 
-            Ok(())
-        }
-        Err(e) => {
-            // Let other initialization errors propagate normally
-            Err(anyhow::anyhow!("Server initialization failed: {}", e))
+                    let error_json = serde_json::to_string(&error_response)?;
+                    let mut stdout = tokio::io::stdout();
+                    stdout
+                        .write_all(format!("{error_json}\n").as_bytes())
+                        .await?;
+                    stdout.flush().await?;
+                }
+
+                // Continue the loop to try serving again
+                continue;
+            }
+            Err(e) => {
+                // Let other initialization errors propagate normally
+                return Err(anyhow::anyhow!("Server initialization failed: {}", e));
+            }
         }
     }
+
+    Ok(())
 }
