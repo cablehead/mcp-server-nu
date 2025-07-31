@@ -1,27 +1,32 @@
 # MCP Server Nu
 
-A Model Context Protocol (MCP) server that provides Nushell script execution capabilities.
+MCP server for executing Nushell scripts.
 
 <img width="745" height="687" alt="image" src="https://github.com/user-attachments/assets/7df465b7-cbaf-47a2-9fa1-a2ab9c1f0fb3" />
 
-⚠️ **This is an early sketch with no safety mechanisms. Do not use in production.**
+⚠️ **No safety mechanisms. Do not use in production.**
 
-## Features
+## Tool: exec
 
-- Execute Nushell scripts via MCP
-- Returns stdout, stderr, and exit codes
-- Supports full Nushell syntax and commands
+Executes Nushell scripts and returns stdout, stderr, exit code.
 
-## Usage
+**Parameters:**
 
-The server exposes one tool:
+- `script` (required): Nushell script to execute
+- `timeout_seconds` (optional): Timeout in seconds (default: 30)
 
-- **exec**: Executes a Nushell script and returns the output
+**Example:**
 
-## Testing
+```json
+{
+  "script": "ls | where size > 1MB | get name",
+  "timeout_seconds": 10
+}
+```
 
-Try it out with the MCP inspector:
+## Install & Test
 
 ```bash
-npx @modelcontextprotocol/inspector ./target/debug/mcp-server-nu
+cargo install --locked mcp-server-nu
+npx @modelcontextprotocol/inspector mcp-server-nu
 ```
