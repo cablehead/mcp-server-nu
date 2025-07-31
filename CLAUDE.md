@@ -20,3 +20,12 @@ Example good commit messages from this project:
 ## Check Script
 
 Run `./scripts/check.sh` to verify code quality before committing. Use `cargo fmt` to fix formatting issues.
+
+## Version Bump Process
+
+When bumping version:
+1. Update version in `Cargo.toml`
+2. Run `cargo check` to update `Cargo.lock`
+3. Commit with message like `chore: bump version to X.Y.Z`
+4. Tag with `git tag vX.Y.Z`
+5. Push commits and tags: `git push && git push --tags`
