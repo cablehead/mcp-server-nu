@@ -82,7 +82,11 @@ Data Types:
         );
 
         let timeout_duration = Duration::from_secs(req.timeout_seconds);
-        let command_future = Command::new("nu").arg("-c").arg(&req.script).output();
+        let command_future = Command::new("nu")
+            .arg("-c")
+            .arg(&req.script)
+            .stdin(std::process::Stdio::null()) // Fix: Explicitly close stdin to prevent hangs
+            .output();
 
         let output = match tokio::time::timeout(timeout_duration, command_future).await {
             Ok(result) => result.map_err(|e| {
