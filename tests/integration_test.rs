@@ -1,7 +1,149 @@
 use assert_cmd::prelude::*;
 use serde_json::{json, Value};
-use std::io::Write;
-use std::process::{Command, Stdio};
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, Command, Stdio};
+
+struct McpTestHarness {
+    child: Child,
+    stdin: std::process::ChildStdin,
+    stdout_reader: BufReader<std::process::ChildStdout>,
+    next_id: u64,
+}
+
+impl McpTestHarness {
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let mut cmd = Command::cargo_bin("mcp-server-nu")?;
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = cmd.spawn()?;
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let stdout_reader = BufReader::new(stdout);
+
+        Ok(Self {
+            child,
+            stdin,
+            stdout_reader,
+            next_id: 1,
+        })
+    }
+
+    fn send_request(
+        &mut self,
+        method: &str,
+        params: Value,
+    ) -> Result<u64, Box<dyn std::error::Error>> {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params
+        });
+
+        writeln!(self.stdin, "{}", serde_json::to_string(&request)?)?;
+        self.stdin.flush()?;
+        Ok(id)
+    }
+
+    fn send_notification(
+        &mut self,
+        method: &str,
+        params: Value,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let request = json!({
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params
+        });
+
+        writeln!(self.stdin, "{}", serde_json::to_string(&request)?)?;
+        self.stdin.flush()?;
+        Ok(())
+    }
+
+    fn read_response(&mut self) -> Result<Value, Box<dyn std::error::Error>> {
+        let mut line = String::new();
+        self.stdout_reader.read_line(&mut line)?;
+        let response: Value = serde_json::from_str(line.trim())?;
+        Ok(response)
+    }
+
+    fn send_initialize(&mut self) -> Result<u64, Box<dyn std::error::Error>> {
+        self.send_request(
+            "initialize",
+            json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {
+                    "tools": {}
+                },
+                "clientInfo": {
+                    "name": "test-client",
+                    "version": "1.0.0"
+                }
+            }),
+        )
+    }
+
+    fn send_initialized_notification(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.send_notification("notifications/initialized", json!({}))
+    }
+
+    fn send_tools_list(&mut self) -> Result<u64, Box<dyn std::error::Error>> {
+        self.send_request("tools/list", json!({}))
+    }
+
+    fn send_tool_call(
+        &mut self,
+        name: &str,
+        arguments: Value,
+    ) -> Result<u64, Box<dyn std::error::Error>> {
+        self.send_request(
+            "tools/call",
+            json!({
+                "name": name,
+                "arguments": arguments
+            }),
+        )
+    }
+
+    fn assert_response_success(
+        &mut self,
+        expected_id: u64,
+    ) -> Result<Value, Box<dyn std::error::Error>> {
+        let response = self.read_response()?;
+        assert_eq!(response["id"], expected_id, "Response ID mismatch");
+        assert!(response["result"].is_object(), "Expected result object");
+        Ok(response)
+    }
+
+    fn assert_response_error(
+        &mut self,
+        expected_id: u64,
+        contains_text: &str,
+    ) -> Result<Value, Box<dyn std::error::Error>> {
+        let response = self.read_response()?;
+        assert_eq!(response["id"], expected_id, "Response ID mismatch");
+        assert!(response["error"].is_object(), "Expected error object");
+        let error_message = response["error"]["message"].as_str().unwrap_or("");
+        assert!(
+            error_message.contains(contains_text),
+            "Error message '{error_message}' should contain '{contains_text}'"
+        );
+        Ok(response)
+    }
+}
+
+impl Drop for McpTestHarness {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
 
 #[test]
 fn smoke_test_binary_exists() -> Result<(), Box<dyn std::error::Error>> {
@@ -12,146 +154,82 @@ fn smoke_test_binary_exists() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_mcp_protocol_complete_flow() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("mcp-server-nu")?;
-    cmd.stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let mut child = cmd.spawn()?;
-    let stdin = child.stdin.as_mut().unwrap();
+    let mut harness = McpTestHarness::new()?;
 
     // Step 1: Send tools/list before initialize - should get error
-    let premature_tools_request = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/list",
-        "params": {}
-    });
+    let premature_id = harness.send_tools_list()?;
+    harness.assert_response_error(premature_id, "Server not initialized")?;
 
-    writeln!(
-        stdin,
-        "{}",
-        serde_json::to_string(&premature_tools_request)?
-    )?;
-    stdin.flush()?;
+    // Step 2: Send proper initialize request
+    let init_id = harness.send_initialize()?;
+    let init_response = harness.assert_response_success(init_id)?;
+    assert_eq!(init_response["result"]["protocolVersion"], "2024-11-05");
 
-    // Wait for error response
-    std::thread::sleep(std::time::Duration::from_millis(100));
-
-    // Step 2: Send proper initialize request (but server may have exited)
-    let initialize_request = json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {
-                "tools": {}
-            },
-            "clientInfo": {
-                "name": "test-client",
-                "version": "1.0.0"
-            }
-        }
-    });
-
-    writeln!(stdin, "{}", serde_json::to_string(&initialize_request)?)?;
-    stdin.flush()?;
-
-    // Step 3: Send initialized notification
-    let initialized_notification = json!({
-        "jsonrpc": "2.0",
-        "method": "notifications/initialized",
-        "params": {}
-    });
-
-    writeln!(
-        stdin,
-        "{}",
-        serde_json::to_string(&initialized_notification)?
-    )?;
-    stdin.flush()?;
+    // Step 3: Send initialized notification (no response expected)
+    harness.send_initialized_notification()?;
 
     // Step 4: Send tools/list request (should work now)
-    let tools_request = json!({
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "tools/list",
-        "params": {}
-    });
+    let tools_id = harness.send_tools_list()?;
+    let tools_response = harness.assert_response_success(tools_id)?;
 
-    writeln!(stdin, "{}", serde_json::to_string(&tools_request)?)?;
-    stdin.flush()?;
+    // Verify the exec tool is present
+    let tools = tools_response["result"]["tools"].as_array().unwrap();
+    assert!(!tools.is_empty(), "Tools list should not be empty");
 
-    // Wait for all responses
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    let exec_tool = tools.iter().find(|tool| tool["name"] == "exec");
+    assert!(exec_tool.is_some(), "Should have an 'exec' tool");
 
-    // Kill the process and check output
-    child.kill()?;
-    let output = child.wait_with_output()?;
+    let exec_tool = exec_tool.unwrap();
+    assert!(exec_tool["description"].is_string());
+    assert!(exec_tool["inputSchema"].is_object());
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    println!("Complete protocol flow stdout: {stdout}");
-
-    // Parse each line as JSON and verify responses
-    let lines: Vec<&str> = stdout.lines().filter(|line| !line.is_empty()).collect();
-
-    // Should have responses for: error, initialize, tools/list
+    // Verify timeout_seconds parameter is present
+    let input_schema = &exec_tool["inputSchema"];
     assert!(
-        lines.len() >= 2,
-        "Expected at least 2 JSON responses, got {}: {:?}",
-        lines.len(),
-        lines
+        input_schema["properties"]["timeout_seconds"].is_object(),
+        "Should have timeout_seconds parameter"
     );
 
-    // Check first response should be an error for premature tools/list
-    let error_response: Value = serde_json::from_str(lines[0])?;
-    assert_eq!(error_response["id"], 1);
-    assert!(
-        error_response["error"].is_object(),
-        "Expected error object in first response"
-    );
-    assert!(
-        error_response["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("Server not initialized")
-            || error_response["error"]["message"]
-                .as_str()
-                .unwrap()
-                .contains("Pre-initialization")
-    );
+    println!("✓ Complete MCP protocol flow works correctly");
+    Ok(())
+}
 
-    // The server currently exits after the error, so we may not get further responses
-    // This test validates that the error response is sent correctly
-    if lines.len() >= 2 {
-        // If we got more responses, verify the initialize response
-        let init_response: Value = serde_json::from_str(lines[1])?;
-        if init_response["id"] == 2 {
-            assert!(init_response["result"].is_object());
-            assert_eq!(init_response["result"]["protocolVersion"], "2024-11-05");
-        }
+#[test]
+fn test_server_continues_after_timeout() -> Result<(), Box<dyn std::error::Error>> {
+    let mut harness = McpTestHarness::new()?;
 
-        // If we got a tools response, verify it
-        if lines.len() >= 3 {
-            let tools_response: Value = serde_json::from_str(lines[2])?;
-            if tools_response["id"] == 3 {
-                assert!(tools_response["result"].is_object());
-                assert!(tools_response["result"]["tools"].is_array());
+    // Step 1: Initialize the server
+    let init_id = harness.send_initialize()?;
+    harness.assert_response_success(init_id)?;
 
-                // Verify the exec tool is present
-                let tools = tools_response["result"]["tools"].as_array().unwrap();
-                assert!(!tools.is_empty(), "Tools list should not be empty");
+    // Step 2: Send initialized notification
+    harness.send_initialized_notification()?;
 
-                let exec_tool = tools.iter().find(|tool| tool["name"] == "exec");
-                assert!(exec_tool.is_some(), "Should have an 'exec' tool");
+    // Step 3: Call exec with a sleep command that will timeout (sleep 1s with 1s timeout)
+    let exec_id = harness.send_tool_call(
+        "exec",
+        json!({
+            "script": "sleep 1sec",
+            "timeout_seconds": 1
+        }),
+    )?;
 
-                let exec_tool = exec_tool.unwrap();
-                assert!(exec_tool["description"].is_string());
-                assert!(exec_tool["inputSchema"].is_object());
-            }
-        }
+    // Step 4: Assert we get a timeout error response immediately
+    harness.assert_response_error(exec_id, "timed out")?;
+
+    // Step 5: Send 3 "ping" requests (tools/list) to verify server is still responsive
+    for i in 1..=3 {
+        let ping_id = harness.send_tools_list()?;
+        let ping_response = harness.assert_response_success(ping_id)?;
+
+        // Verify the response contains tools
+        assert!(
+            ping_response["result"]["tools"].is_array(),
+            "Ping {i} should have tools array"
+        );
+        println!("✓ Ping {i} responded successfully");
     }
 
+    println!("✓ Server continued processing after timeout - all 3 pings responded");
     Ok(())
 }

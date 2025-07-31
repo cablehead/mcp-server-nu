@@ -14,6 +14,13 @@ use tracing::{error, info, warn};
 pub struct ExecRequest {
     /// The nushell script to execute.
     script: String,
+    /// Timeout in seconds for script execution (default: 30).
+    #[serde(default = "default_timeout")]
+    timeout_seconds: u64,
+}
+
+fn default_timeout() -> u64 {
+    30
 }
 
 #[derive(Clone)]
@@ -74,7 +81,7 @@ Data Types:
             req.script.chars().take(100).collect::<String>()
         );
 
-        let timeout_duration = Duration::from_secs(30);
+        let timeout_duration = Duration::from_secs(req.timeout_seconds);
         let command_future = Command::new("nu").arg("-c").arg(&req.script).output();
 
         let output = match tokio::time::timeout(timeout_duration, command_future).await {
