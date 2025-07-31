@@ -6,8 +6,8 @@ When committing: review `git diff`
 
 - Use conventional commit format: `type: subject line`
 - Keep subject line concise and descriptive
-- No marketing language or promotional text in commit messages
-- No "Generated with Claude" or similar attribution in commit messages
+- **NEVER include marketing language, promotional text, or AI attribution**
+- **NEVER add "Generated with Claude Code", "Co-Authored-By: Claude", or similar spam**
 - Follow existing project patterns from git log
 - Prefer just a subject and no body, unless the change is particularly complex
 
