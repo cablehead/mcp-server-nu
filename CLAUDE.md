@@ -17,9 +17,9 @@ Example good commit messages from this project:
 - `feat: add a --fallback option to .static to support SPAs`
 - `refactor: remove axum dependency, consolidate unix socket, tcp and tls handling`
 
-## Check Script
+## Code Quality
 
-Run `./scripts/check.sh` to verify code quality before committing. Use `cargo fmt` to fix formatting issues.
+Always run `./scripts/check.sh` before committing. Use `cargo fmt` to fix formatting issues.
 
 ## Version Bump Process
 

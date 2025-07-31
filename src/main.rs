@@ -1,14 +1,20 @@
 mod tools;
 
 use anyhow::Result;
+use clap::Parser;
 use rmcp::{
     model::*, service::ServerInitializeError, transport::stdio, ErrorData as McpError, ServiceExt,
 };
 use tokio::io::AsyncWriteExt;
 use tools::NuServer;
 
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Args {}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _args = Args::parse();
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
