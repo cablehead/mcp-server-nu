@@ -1,5 +1,3 @@
-# Claude Development Notes
-
 ## Git Commit Style Preferences
 
 When committing: review `git diff`
