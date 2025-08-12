@@ -35,3 +35,10 @@ When bumping version:
 3. Commit with message like `chore: bump version to X.Y.Z`
 4. Tag with `git tag vX.Y.Z`
 5. Push commits and tags: `git push && git push --tags`
+
+## PR Flow
+
+1. `gh pr edit <num> --title "type: description"` - Fix PR title to match commit standards
+2. `gh pr edit <num> --body "terse description"` - Add clear description of changes
+3. `gh pr merge <num> --squash --subject "title" --body "description"` - Squash merge with custom message
+4. `git checkout main && git pull` - Switch back and sync
