@@ -433,3 +433,42 @@ print $"Env loaded: ($env_loaded)"
 
     Ok(())
 }
+
+#[test]
+fn test_missing_config_file_behavior() -> Result<(), Box<dyn std::error::Error>> {
+    // Nu handles missing config files gracefully - warns but continues execution
+    let mut harness = McpTestHarness::new_with_options(
+        None,
+        Some(vec!["--nu-config", "/nonexistent/config.nu"]),
+    )?;
+
+    let init_id = harness.send_initialize()?;
+    harness.assert_response_success(init_id)?;
+    harness.send_initialized_notification()?;
+
+    let test_script = r#"print "test""#;
+
+    let exec_id = harness.send_tool_call(
+        "exec",
+        json!({
+            "script": test_script,
+            "timeout_seconds": 10
+        }),
+    )?;
+
+    let exec_response = harness.assert_response_success(exec_id)?;
+    let result_text = exec_response["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    let result_json: Value = serde_json::from_str(result_text)?;
+    let stdout = result_json["stdout"].as_str().unwrap();
+    let stderr = result_json["stderr"].as_str().unwrap();
+    let exit_code = result_json["exit_code"].as_i64().unwrap();
+
+    // Nu warns about missing config but continues execution with exit code 0
+    assert_eq!(exit_code, 0);
+    assert_eq!(stdout, "test\n");
+    assert!(stderr.contains("File not found") && stderr.contains("config.nu"));
+
+    Ok(())
+}
