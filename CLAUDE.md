@@ -19,6 +19,14 @@ Example good commit messages from this project:
 
 Always run `./scripts/check.sh` before committing. Use `cargo fmt` to fix formatting issues.
 
+## Release Process
+
+1. Find last stable release: `git tag --sort=-version:refname | grep -v dev | head -1`
+2. Get commits since last release: `git log --oneline --pretty=format:"* %s (%ad)" --date=short v{last}..HEAD`
+3. Create `changes/v{version}.md` with title and commit list
+4. Add highlights section for notable changes
+5. Commit changes and tag: `git tag v{version}`
+
 ## Version Bump Process
 
 When bumping version:
