@@ -10,11 +10,19 @@ use tools::NuServer;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
-struct Args {}
+struct Args {
+    /// Path to custom nushell config.nu file
+    #[arg(long = "nu-config")]
+    nu_config: Option<String>,
+
+    /// Path to custom nushell env.nu file
+    #[arg(long = "nu-env-config")]
+    nu_env_config: Option<String>,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let _args = Args::parse();
+    let args = Args::parse();
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -22,7 +30,10 @@ async fn main() -> Result<()> {
 
     // Create and start the Nushell MCP server
     loop {
-        match NuServer::new().serve(stdio()).await {
+        match NuServer::new(args.nu_config.clone(), args.nu_env_config.clone())
+            .serve(stdio())
+            .await
+        {
             Ok(service) => {
                 service.waiting().await?;
                 break;

@@ -26,14 +26,34 @@ fn default_timeout() -> u64 {
 #[derive(Clone)]
 pub struct NuServer {
     tool_router: ToolRouter<Self>,
+    nu_config: Option<String>,
+    nu_env_config: Option<String>,
 }
 
 #[tool_router]
 impl NuServer {
-    pub fn new() -> Self {
+    pub fn new(nu_config: Option<String>, nu_env_config: Option<String>) -> Self {
         Self {
             tool_router: Self::tool_router(),
+            nu_config,
+            nu_env_config,
         }
+    }
+
+    fn build_nu_command(&self, script: &str) -> Command {
+        let mut cmd = Command::new("nu");
+
+        if let Some(config_path) = &self.nu_config {
+            cmd.arg("--config").arg(config_path);
+        }
+
+        if let Some(env_config_path) = &self.nu_env_config {
+            cmd.arg("--env-config").arg(env_config_path);
+        }
+
+        cmd.arg("-c").arg(script).stdin(std::process::Stdio::null());
+
+        cmd
     }
 
     #[tool(
@@ -82,11 +102,7 @@ Data Types:
         );
 
         let timeout_duration = Duration::from_secs(req.timeout_seconds);
-        let command_future = Command::new("nu")
-            .arg("-c")
-            .arg(&req.script)
-            .stdin(std::process::Stdio::null()) // Fix: Explicitly close stdin to prevent hangs
-            .output();
+        let command_future = self.build_nu_command(&req.script).output();
 
         let output = match tokio::time::timeout(timeout_duration, command_future).await {
             Ok(result) => result.map_err(|e| {

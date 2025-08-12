@@ -18,6 +18,13 @@ impl McpTestHarness {
     fn new_with_env(
         env_vars: Option<Vec<(&str, &str)>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::new_with_options(env_vars, None)
+    }
+
+    fn new_with_options(
+        env_vars: Option<Vec<(&str, &str)>>,
+        cli_args: Option<Vec<&str>>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut cmd = Command::cargo_bin("mcp-server-nu")?;
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -27,6 +34,10 @@ impl McpTestHarness {
             for (key, value) in env_vars {
                 cmd.env(key, value);
             }
+        }
+
+        if let Some(args) = cli_args {
+            cmd.args(args);
         }
 
         let mut child = cmd.spawn()?;
@@ -325,6 +336,100 @@ print $"Config after manual source: ($config_after_source)"
         stdout.contains("Config after manual source: yes"),
         "Manual sourcing works"
     );
+
+    Ok(())
+}
+
+#[test]
+fn test_custom_config_via_cli_args() -> Result<(), Box<dyn std::error::Error>> {
+    let fixtures_path = std::env::current_dir()?.join("tests/fixtures");
+    let config_path = fixtures_path.join("nushell/config.nu");
+    let env_config_path = fixtures_path.join("nushell/env.nu");
+
+    let mut harness = McpTestHarness::new_with_options(
+        None,
+        Some(vec![
+            "--nu-config",
+            config_path.to_str().unwrap(),
+            "--nu-env-config",
+            env_config_path.to_str().unwrap(),
+        ]),
+    )?;
+
+    let init_id = harness.send_initialize()?;
+    harness.assert_response_success(init_id)?;
+    harness.send_initialized_notification()?;
+
+    let test_script = r#"
+# Check if custom config was loaded
+let config_loaded = if "TEST_CONFIG_LOADED" in $env { $env.TEST_CONFIG_LOADED } else { "no" }
+print $"Config loaded: ($config_loaded)"
+
+# Check if custom env was loaded
+let env_loaded = if "TEST_ENV_LOADED" in $env { $env.TEST_ENV_LOADED } else { "no" }
+print $"Env loaded: ($env_loaded)"
+"#;
+
+    let exec_id = harness.send_tool_call(
+        "exec",
+        json!({
+            "script": test_script,
+            "timeout_seconds": 10
+        }),
+    )?;
+
+    let exec_response = harness.assert_response_success(exec_id)?;
+    let result_text = exec_response["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    let result_json: Value = serde_json::from_str(result_text)?;
+    let stdout = result_json["stdout"].as_str().unwrap();
+
+    assert!(stdout.contains("Config loaded: yes"));
+    assert!(stdout.contains("Env loaded: yes"));
+
+    Ok(())
+}
+
+#[test]
+fn test_config_only_via_cli_args() -> Result<(), Box<dyn std::error::Error>> {
+    let fixtures_path = std::env::current_dir()?.join("tests/fixtures");
+    let config_path = fixtures_path.join("nushell/config.nu");
+
+    let mut harness = McpTestHarness::new_with_options(
+        None,
+        Some(vec!["--nu-config", config_path.to_str().unwrap()]),
+    )?;
+
+    let init_id = harness.send_initialize()?;
+    harness.assert_response_success(init_id)?;
+    harness.send_initialized_notification()?;
+
+    let test_script = r#"
+let config_loaded = if "TEST_CONFIG_LOADED" in $env { $env.TEST_CONFIG_LOADED } else { "no" }
+print $"Config loaded: ($config_loaded)"
+
+let env_loaded = if "TEST_ENV_LOADED" in $env { $env.TEST_ENV_LOADED } else { "no" }
+print $"Env loaded: ($env_loaded)"
+"#;
+
+    let exec_id = harness.send_tool_call(
+        "exec",
+        json!({
+            "script": test_script,
+            "timeout_seconds": 10
+        }),
+    )?;
+
+    let exec_response = harness.assert_response_success(exec_id)?;
+    let result_text = exec_response["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    let result_json: Value = serde_json::from_str(result_text)?;
+    let stdout = result_json["stdout"].as_str().unwrap();
+
+    assert!(stdout.contains("Config loaded: yes"));
+    assert!(stdout.contains("Env loaded: no"));
 
     Ok(())
 }
