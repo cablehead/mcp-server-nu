@@ -12,10 +12,22 @@ struct McpTestHarness {
 
 impl McpTestHarness {
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        Self::new_with_env(None)
+    }
+
+    fn new_with_env(
+        env_vars: Option<Vec<(&str, &str)>>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut cmd = Command::cargo_bin("mcp-server-nu")?;
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+
+        if let Some(env_vars) = env_vars {
+            for (key, value) in env_vars {
+                cmd.env(key, value);
+            }
+        }
 
         let mut child = cmd.spawn()?;
         let stdin = child.stdin.take().unwrap();
@@ -231,5 +243,88 @@ fn test_server_continues_after_timeout() -> Result<(), Box<dyn std::error::Error
     }
 
     println!("✓ Server continued processing after timeout - all 3 pings responded");
+    Ok(())
+}
+
+#[test]
+fn test_xdg_config_home_environment_setup() -> Result<(), Box<dyn std::error::Error>> {
+    // This test documents current nushell behavior: `nu -c` doesn't auto-load config files,
+    // which is reasonable default behavior. Config files must be explicitly sourced or loaded
+    // via --config/--env-config flags when desired.
+
+    let fixtures_path = std::env::current_dir()?.join("tests/fixtures");
+
+    let mut harness = McpTestHarness::new_with_env(Some(vec![(
+        "XDG_CONFIG_HOME",
+        fixtures_path.to_str().unwrap(),
+    )]))?;
+
+    let init_id = harness.send_initialize()?;
+    harness.assert_response_success(init_id)?;
+    harness.send_initialized_notification()?;
+
+    // Script demonstrates current `nu -c` behavior
+    let test_script = r#"
+# 1. XDG_CONFIG_HOME is passed through environment correctly
+let xdg_path = if "XDG_CONFIG_HOME" in $env { $env.XDG_CONFIG_HOME } else { "not set" }
+print $"XDG_CONFIG_HOME: ($xdg_path)"
+
+# 2. Nu can discover config path using XDG_CONFIG_HOME
+print $"Config path: ($nu.config-path)"
+print $"Config exists: (($nu.config-path | path exists))"
+
+# 3. Check if configs are auto-loaded by `nu -c`
+let config_auto_loaded = if "TEST_CONFIG_LOADED" in $env { "yes" } else { "no" }
+print $"Config auto-loaded: ($config_auto_loaded)"
+
+# 4. Manual sourcing
+if ($nu.config-path | path exists) {
+    source ($nu.config-path)
+}
+if ($nu.env-path | path exists) {
+    source ($nu.env-path)
+}
+
+let config_after_source = if "TEST_CONFIG_LOADED" in $env { "yes" } else { "no" }
+print $"Config after manual source: ($config_after_source)"
+"#;
+
+    // Call exec tool
+    let exec_id = harness.send_tool_call(
+        "exec",
+        json!({
+            "script": test_script,
+            "timeout_seconds": 10
+        }),
+    )?;
+
+    let exec_response = harness.assert_response_success(exec_id)?;
+
+    // Parse the response and extract stdout
+    let result_text = exec_response["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    let result_json: Value = serde_json::from_str(result_text)?;
+    let stdout = result_json["stdout"].as_str().unwrap();
+
+    println!("Script output:\n{stdout}");
+
+    assert!(
+        stdout.contains(&fixtures_path.to_string_lossy().to_string()),
+        "XDG_CONFIG_HOME should be passed through environment"
+    );
+    assert!(
+        stdout.contains("Config exists: true"),
+        "Nu should discover config via XDG_CONFIG_HOME"
+    );
+    assert!(
+        stdout.contains("Config auto-loaded: no"),
+        "Configs don't auto-load with `nu -c`"
+    );
+    assert!(
+        stdout.contains("Config after manual source: yes"),
+        "Manual sourcing works"
+    );
+
     Ok(())
 }
